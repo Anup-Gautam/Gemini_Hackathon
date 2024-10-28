@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Box,
   Button,
@@ -8,10 +8,19 @@ import {
   Grid,
   Typography,
   styled,
+  CircularProgress,
 } from "@mui/material";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// Initialize Gemini AI
+const genAI = new GoogleGenerativeAI(import.meta.env.REACT_APP_GEMINI_API_KEY);
 
 const LandingPage = () => {
+  const [loading, setLoading] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+
   const VisuallyHiddenInput = styled("input")({
     clip: "rect(0 0 0 0)",
     clipPath: "inset(50%)",
@@ -23,6 +32,62 @@ const LandingPage = () => {
     whiteSpace: "nowrap",
     width: 1,
   });
+
+  // Function to convert file to base64
+  const fileToGenerativePart = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        resolve({
+          inlineData: {
+            data: reader.result.split(",")[1], // Remove "data:<mime-type>;base64," prefix
+            mimeType: file.type,
+          },
+        });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const analyzeImage = async (file) => {
+    try {
+      setLoading(true);
+
+      // Create image preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+
+      // Prepare the image for Gemini
+      const imagePart = await fileToGenerativePart(file);
+
+      // Get the generative model
+      const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
+
+      // Analyze the image
+      const result = await model.generateContent([
+        "Analyze this image and identify recyclable items. For each item, specify its material type and recycling category. Format the response as a structured list.",
+        imagePart,
+      ]);
+      const response = await result.response;
+      setAnalysis(response.text());
+    } catch (error) {
+      console.error("Error analyzing image:", error);
+      setAnalysis("Error analyzing image. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      await analyzeImage(file);
+    }
+  };
 
   const GradientTypography = styled(Typography)(({ theme }) => ({
     background: "linear-gradient(45deg, #2E7D32 30%, #1565C0 90%)",
@@ -44,11 +109,6 @@ const LandingPage = () => {
     backgroundColor: theme.palette.grey[50],
     padding: theme.spacing(4),
   }));
-
-  const handleFileChange = (event) => {
-    const files = event.target.files;
-    console.log(files);
-  };
 
   return (
     <Box
@@ -83,9 +143,11 @@ const LandingPage = () => {
                   variant="contained"
                   color="primary"
                   startIcon={<CloudUploadIcon />}
+                  disabled={loading}
                   sx={{
                     mt: 2,
                     mb: 2,
+                    mr: 2,
                     borderRadius: 28,
                     px: 4,
                     py: 1.5,
@@ -96,7 +158,7 @@ const LandingPage = () => {
                     },
                   }}
                 >
-                  Upload Image
+                  {loading ? "Analyzing..." : "Upload Image"}
                   <VisuallyHiddenInput
                     type="file"
                     onChange={handleFileChange}
@@ -110,6 +172,91 @@ const LandingPage = () => {
               </CardContent>
             </UploadCard>
           </Box>
+
+          {/* Analysis Results Section */}
+          {(loading || analysis || imagePreview) && (
+            <Card sx={{ mb: 6, p: 3 }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Analysis Results
+                </Typography>
+
+                {imagePreview && (
+                  <Box sx={{ mb: 3, maxWidth: "300px", margin: "0 auto" }}>
+                    <img
+                      src={imagePreview}
+                      alt="Uploaded"
+                      style={{
+                        width: "100%",
+                        height: "auto",
+                        borderRadius: "8px",
+                      }}
+                    />
+                  </Box>
+                )}
+
+                {loading && (
+                  <Box
+                    sx={{ display: "flex", justifyContent: "center", my: 3 }}
+                  >
+                    <CircularProgress />
+                  </Box>
+                )}
+
+                {analysis && !loading && (
+                  <Typography
+                    variant="body1"
+                    component="pre"
+                    sx={{
+                      whiteSpace: "pre-wrap",
+                      bgcolor: "grey.50",
+                      p: 2,
+                      borderRadius: 1,
+                    }}
+                  >
+                    {analysis}
+                  </Typography>
+                )}
+                <Button
+                  variant="contained"
+                  sx={{
+                    mt: 2,
+                    mb: 2,
+                    borderRadius: 28,
+                    px: 4,
+                    py: 1.5,
+                    textTransform: "none",
+                    backgroundColor: "#2E7D32",
+                    "&:hover": {
+                      backgroundColor: "#1B5E20",
+                    },
+                  }}
+                >
+                  {" "}
+                  Do a Simple Recycle
+                </Button>
+                <Button
+                  variant="contained"
+                  sx={{
+                    mt: 2,
+                    mb: 2,
+                    ml: 2,
+                    borderRadius: 28,
+                    px: 4,
+                    py: 1.5,
+                    textTransform: "none",
+                    backgroundColor: "#2E7D32",
+                    "&:hover": {
+                      backgroundColor: "#1B5E20",
+                    },
+                  }}
+                >
+                  {" "}
+                  Be Creative
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Features Section */}
           <Grid container spacing={3}>
